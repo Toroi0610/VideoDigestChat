@@ -13,6 +13,15 @@ from src.services.chat_service import generate_chat_response
 
 openai_api_key = os.environ["OPENAI_API_KEY"]
 
+def get_text_template(transcript, summary):
+
+    return f"""
+{transcript}
+
+つまり，上記は以下のことを言っています．
+{summary}
+"""
+
 def video_to_summary(video, model_name):
     """Process and transcribe the video at a given url"""
     # Setting qa_chain as a global variable
@@ -23,8 +32,10 @@ def video_to_summary(video, model_name):
     summary = generate_summary(transcript=transcript)
 
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=150)
-    splits = text_splitter.split_text(transcript)
     embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
+
+    text = get_text_template(transcript, summary)
+    splits = text_splitter.split_text(text)
     vectordb = FAISS.from_texts(splits, embeddings)
     qa_chain = RetrievalQA.from_chain_type(
         llm=ChatOpenAI(model_name=model_name, temperature=0, openai_api_key=openai_api_key),
