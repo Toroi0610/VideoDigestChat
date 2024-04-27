@@ -132,4 +132,5 @@ cython_debug/
 # Ignore all local .env files
 **/.env
 
+# Ignore api
 .secret
