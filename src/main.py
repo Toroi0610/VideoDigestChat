@@ -1,20 +1,66 @@
+import os
+
 import gradio as gr
-from services.transcription_service import process_video
-from services.summary_service import generate_summary
-from services.chat_service import generate_chat_response
+from langchain.chains import RetrievalQA
+from langchain.vectorstores import FAISS
+from langchain.chat_models import ChatOpenAI
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-def main(video, question):
+from src.services.transcription_service import process_video
+from src.services.summary_service import generate_summary
+from src.services.chat_service import generate_chat_response
+
+openai_api_key = os.environ["OPENAI_API_KEY"]
+
+def video_to_summary(video, model_name):
+    """Process and transcribe the video at a given url"""
+    # Setting qa_chain as a global variable
+    global transcript
+    global qa_chain
+
     transcript = process_video(video)
-    summary = generate_summary(transcript)
-    response = generate_chat_response(transcript, question)
-    return summary, response
+    summary = generate_summary(transcript=transcript)
 
-iface = gr.Interface(
-    fn=main,
-    inputs=[gr.inputs.Video(label="動画をアップロード"), gr.inputs.Textbox(label="質問を入力")],
-    outputs=[gr.outputs.Textbox(label="要約"), gr.outputs.Textbox(label="チャット応答")],
-    title="VideoDigestChat"
-)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=150)
+    splits = text_splitter.split_text(transcript)
+    embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
+    vectordb = FAISS.from_texts(splits, embeddings)
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=ChatOpenAI(model_name=model_name, temperature=0, openai_api_key=openai_api_key),
+        chain_type="stuff",
+        retriever=vectordb.as_retriever(),
+    )
+    return summary
+
+
+def response(message, history):
+    return qa_chain.run(message)
+
+
 
 if __name__ == "__main__":
-    iface.launch()
+    transcribe_interface = gr.Interface(
+        fn=video_to_summary,
+        inputs=[
+            gr.Video(label="動画をアップロード"),
+            gr.components.Radio(
+                [
+                    'gpt-3.5-turbo',
+                    'gpt-3.5-turbo-16k',
+                    'gpt-4'
+                ]
+            )
+        ],
+        outputs=gr.Textbox(label="transcript"),
+        title="VideoDigestChat"
+    )
+
+    chat_interface = gr.ChatInterface(
+        fn=response,
+        title="Chat",
+        description="Chat with AI about the video you just summraized."
+    )
+    demo = gr.TabbedInterface([transcribe_interface, chat_interface], ["Transcribe & Summarize", "Chat"])
+    demo.queue()
+    demo.launch()
