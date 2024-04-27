@@ -133,4 +133,4 @@ cython_debug/
 **/.env
 
 # Ignore api
-.secret
+secret/
